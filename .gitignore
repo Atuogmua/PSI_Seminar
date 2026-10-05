@@ -1,0 +1,39 @@
+# Virtual environment
+venv/
+.env
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Database
+*.db
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test / coverage output
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Generated HTML results
+tmp_results_*.html
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+bookcompare.log
