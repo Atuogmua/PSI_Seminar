@@ -50,26 +50,34 @@ def search_all(
     scrapers = [cls() for cls in ALL_SCRAPERS]
     all_results: list[BookResult] = []
     failed_count = 0
+    completed_futures: set = set()
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(_run_scraper_search, scraper, method, query): scraper
-            for scraper in scrapers
-        }
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    futures = {
+        executor.submit(_run_scraper_search, scraper, method, query): scraper
+        for scraper in scrapers
+    }
 
-        for future in as_completed(futures):
+    try:
+        for future in as_completed(futures, timeout=SCRAPER_TIMEOUT):
+            completed_futures.add(future)
             scraper = futures[future]
             try:
-                results = future.result(timeout=SCRAPER_TIMEOUT)
+                results = future.result()
                 all_results.extend(results)
-            except TimeoutError:
-                logger.warning("[%s] Timed out after %ds — skipping",
-                               scraper.SHOP_NAME, SCRAPER_TIMEOUT)
-                failed_count += 1
             except Exception:
                 logger.error("[%s] Unexpected error — skipping:\n%s",
                              scraper.SHOP_NAME, traceback.format_exc())
                 failed_count += 1
+    except TimeoutError:
+        for future, scraper in futures.items():
+            if future not in completed_futures:
+                logger.warning("[%s] Timed out after %ds — skipping",
+                               scraper.SHOP_NAME, SCRAPER_TIMEOUT)
+                failed_count += 1
+                future.cancel()
+
+    executor.shutdown(wait=False, cancel_futures=True)
 
     db = Database()
     try:
