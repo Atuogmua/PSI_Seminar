@@ -29,7 +29,7 @@ def search_all(
     query: str,
     search_type: str = "title",
     max_workers: int = 5,
-) -> list[BookResult]:
+) -> tuple[list[BookResult], SearchSession]:
     """Run all scrapers concurrently, persist results to SQLite, and return them.
 
     Args:
@@ -38,7 +38,7 @@ def search_all(
         max_workers: Maximum number of concurrent threads.
 
     Returns:
-        Combined list of BookResult from all scrapers, sorted by price ascending (NULLs last).
+        Tuple of (results sorted by price ascending with NULLs last, SearchSession).
     """
     method_map = {
         "isbn": "search_by_isbn",
@@ -78,4 +78,4 @@ def search_all(
         db.close()
 
     all_results.sort(key=lambda r: (r.price is None, r.price or 0))
-    return all_results
+    return all_results, session
