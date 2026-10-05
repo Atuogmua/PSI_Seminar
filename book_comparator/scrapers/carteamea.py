@@ -89,10 +89,8 @@ class CarteameaScraper(BaseBookScraper):
         all_results: list[BookResult] = []
 
         for page in range(1, MAX_PAGES + 1):
-            try:
-                soup = self._get(self.SEARCH_URL, params={"q": query, "page": str(page)})
-            except Exception as e:
-                logger.error("[%s] Request failed on page %d: %s", self.SHOP_NAME, page, e)
+            soup = self._get(self.SEARCH_URL, params={"q": query, "page": str(page)})
+            if soup is None:
                 break
 
             page_results = self._parse_page(soup)
@@ -105,6 +103,7 @@ class CarteameaScraper(BaseBookScraper):
             if not next_link:
                 break
 
+        logger.info("[%s] Found %d results", self.SHOP_NAME, len(all_results))
         return all_results
 
     def search_by_isbn(self, isbn: str) -> list[BookResult]:

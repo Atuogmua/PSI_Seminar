@@ -18,10 +18,8 @@ class BookzoneScraper(BaseBookScraper):
     def _parse_results(self, query: str) -> list[BookResult]:
         """Fetch search results and parse product cards."""
         results: list[BookResult] = []
-        try:
-            soup = self._get(self.SEARCH_URL, params={"q": query})
-        except Exception as e:
-            logger.error("[%s] Request failed: %s", self.SHOP_NAME, e)
+        soup = self._get(self.SEARCH_URL, params={"q": query})
+        if soup is None:
             return results
 
         products = soup.select(
@@ -86,6 +84,7 @@ class BookzoneScraper(BaseBookScraper):
                 scraped_at=self._now_iso(),
             ))
 
+        logger.info("[%s] Found %d results", self.SHOP_NAME, len(results))
         return results
 
     def search_by_isbn(self, isbn: str) -> list[BookResult]:

@@ -20,13 +20,15 @@ class BiblionScraper(BaseBookScraper):
 
     def _fetch_isbn_from_detail(self, url: str) -> str | None:
         """Follow a product detail page link and attempt to extract ISBN."""
+        import re
+        soup = self._get(url)
+        if soup is None:
+            return None
         try:
-            soup = self._get(url)
             isbn_el = soup.select_one(".isbn, [itemprop='isbn'], td:contains('ISBN') + td, .product-isbn")
             if isbn_el:
                 return self.normalize_isbn(isbn_el.get_text())
             text = soup.get_text()
-            import re
             match = re.search(r"ISBN[:\s]*([\d\-]{10,17})", text)
             if match:
                 return self.normalize_isbn(match.group(1))
@@ -37,10 +39,8 @@ class BiblionScraper(BaseBookScraper):
     def _parse_results(self, query: str) -> list[BookResult]:
         """Fetch search results and parse the results list."""
         results: list[BookResult] = []
-        try:
-            soup = self._get(self.SEARCH_URL, params={"route": "product/search", "search": query})
-        except Exception as e:
-            logger.error("[%s] Request failed: %s", self.SHOP_NAME, e)
+        soup = self._get(self.SEARCH_URL, params={"route": "product/search", "search": query})
+        if soup is None:
             return results
 
         products = soup.select("div.product-item, div.product-card, li.product, div.product-layout, div.product-thumb")
@@ -105,6 +105,7 @@ class BiblionScraper(BaseBookScraper):
                 scraped_at=self._now_iso(),
             ))
 
+        logger.info("[%s] Found %d results", self.SHOP_NAME, len(results))
         return results
 
     def search_by_isbn(self, isbn: str) -> list[BookResult]:

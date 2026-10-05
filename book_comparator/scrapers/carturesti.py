@@ -23,11 +23,9 @@ class CarturestiScraper(BaseBookScraper):
     def _parse_results(self, query: str) -> list[BookResult]:
         """Fetch search results and parse the product grid."""
         results: list[BookResult] = []
-        try:
-            url = f"{self.SEARCH_URL}{quote(query)}"
-            soup = self._get(url)
-        except Exception as e:
-            logger.error("[%s] Request failed: %s", self.SHOP_NAME, e)
+        url = f"{self.SEARCH_URL}{quote(query)}"
+        soup = self._get(url)
+        if soup is None:
             return results
 
         products = soup.select("div.product-item, div.grid-item, li.product, div.product, div.card")
@@ -92,6 +90,7 @@ class CarturestiScraper(BaseBookScraper):
                 scraped_at=self._now_iso(),
             ))
 
+        logger.info("[%s] Found %d results", self.SHOP_NAME, len(results))
         return results
 
     def search_by_isbn(self, isbn: str) -> list[BookResult]:

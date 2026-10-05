@@ -1,7 +1,8 @@
 """Search orchestrator — runs all scrapers concurrently and persists results."""
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import traceback
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 
 from book_comparator.models.book import BookResult, SearchSession
 from book_comparator.scrapers import ALL_SCRAPERS
@@ -10,26 +11,24 @@ from book_comparator.services.database import Database
 
 logger = logging.getLogger(__name__)
 
+SCRAPER_TIMEOUT = 30
+
 
 def _run_scraper_search(
     scraper: BaseBookScraper,
     method: str,
     query: str,
 ) -> list[BookResult]:
-    """Execute a single scraper's search method, returning results or empty list on error."""
-    try:
-        func = getattr(scraper, method)
-        return func(query)
-    except Exception as e:
-        logger.error("[%s] Error during %s: %s", scraper.SHOP_NAME, method, e)
-        return []
+    """Execute a single scraper's search method."""
+    func = getattr(scraper, method)
+    return func(query)
 
 
 def search_all(
     query: str,
     search_type: str = "title",
     max_workers: int = 5,
-) -> tuple[list[BookResult], SearchSession]:
+) -> tuple[list[BookResult], SearchSession, int]:
     """Run all scrapers concurrently, persist results to SQLite, and return them.
 
     Args:
@@ -38,7 +37,8 @@ def search_all(
         max_workers: Maximum number of concurrent threads.
 
     Returns:
-        Tuple of (results sorted by price ascending with NULLs last, SearchSession).
+        Tuple of (results sorted by price ascending with NULLs last,
+                  SearchSession, number of failed scrapers).
     """
     method_map = {
         "isbn": "search_by_isbn",
@@ -49,6 +49,7 @@ def search_all(
 
     scrapers = [cls() for cls in ALL_SCRAPERS]
     all_results: list[BookResult] = []
+    failed_count = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -59,10 +60,16 @@ def search_all(
         for future in as_completed(futures):
             scraper = futures[future]
             try:
-                results = future.result()
+                results = future.result(timeout=SCRAPER_TIMEOUT)
                 all_results.extend(results)
-            except Exception as e:
-                logger.error("[%s] Unexpected error: %s", scraper.SHOP_NAME, e)
+            except TimeoutError:
+                logger.warning("[%s] Timed out after %ds — skipping",
+                               scraper.SHOP_NAME, SCRAPER_TIMEOUT)
+                failed_count += 1
+            except Exception:
+                logger.error("[%s] Unexpected error — skipping:\n%s",
+                             scraper.SHOP_NAME, traceback.format_exc())
+                failed_count += 1
 
     db = Database()
     try:
@@ -78,4 +85,4 @@ def search_all(
         db.close()
 
     all_results.sort(key=lambda r: (r.price is None, r.price or 0))
-    return all_results, session
+    return all_results, session, failed_count

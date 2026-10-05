@@ -1,6 +1,7 @@
 """Abstract base scraper defining the common interface for all bookstore scrapers."""
 
 import logging
+import random
 import re
 import time
 from abc import ABC, abstractmethod
@@ -13,12 +14,16 @@ from book_comparator.models.book import BookResult
 
 logger = logging.getLogger(__name__)
 
+MAX_RETRIES = 3
+BACKOFF_BASE = 1
+
 
 class BaseBookScraper(ABC):
     """Abstract base class for bookstore scrapers.
 
     All concrete scrapers must implement the three search methods.
-    Provides a shared HTTP session with common headers and request throttling.
+    Provides a shared HTTP session with common headers, request throttling,
+    and retry logic with exponential backoff.
     """
 
     SHOP_NAME: str = ""
@@ -38,21 +43,37 @@ class BaseBookScraper(ABC):
         self.session.headers.update(self.HEADERS)
         self._last_request_time: float = 0.0
 
-    def _get(self, url: str, params: dict | None = None) -> BeautifulSoup:
-        """Send GET request with self.HEADERS, raise on HTTP errors, return parsed soup (lxml parser).
+    def _get(self, url: str, params: dict | None = None) -> BeautifulSoup | None:
+        """Send GET request with retry logic, return parsed soup or None.
 
-        Enforces a 1-second delay between consecutive requests to the same domain.
-        Logs every request URL at DEBUG level.
+        - 10-second request timeout.
+        - Retries up to 3 times with exponential backoff (1s, 2s, 4s).
+        - Random delay between 0.5 and 1.5 seconds between requests to the same domain.
+        - Logs every request URL at DEBUG level.
+        - Returns None if all retries are exhausted.
         """
         elapsed = time.time() - self._last_request_time
-        if elapsed < 1.0:
-            time.sleep(1.0 - elapsed)
+        delay = random.uniform(0.5, 1.5)
+        if elapsed < delay:
+            time.sleep(delay - elapsed)
 
-        logger.debug("[%s] GET %s params=%s", self.SHOP_NAME, url, params)
-        response = self.session.get(url, params=params, timeout=15)
-        self._last_request_time = time.time()
-        response.raise_for_status()
-        return BeautifulSoup(response.text, "lxml")
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                logger.debug("[%s] GET %s params=%s (attempt %d/%d)",
+                             self.SHOP_NAME, url, params, attempt, MAX_RETRIES)
+                response = self.session.get(url, params=params, timeout=10)
+                self._last_request_time = time.time()
+                response.raise_for_status()
+                return BeautifulSoup(response.text, "lxml")
+            except requests.exceptions.RequestException as e:
+                logger.warning("[%s] Request failed (attempt %d/%d): %s",
+                               self.SHOP_NAME, attempt, MAX_RETRIES, e)
+                if attempt < MAX_RETRIES:
+                    backoff = BACKOFF_BASE * (2 ** (attempt - 1))
+                    time.sleep(backoff)
+
+        logger.error("[%s] All %d retries exhausted for %s", self.SHOP_NAME, MAX_RETRIES, url)
+        return None
 
     @staticmethod
     def normalize_isbn(raw: str | None) -> str | None:

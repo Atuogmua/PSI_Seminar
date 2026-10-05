@@ -5,8 +5,11 @@ import tkinter as tk
 from tkinter import messagebox
 
 from book_comparator.models.book import SearchSession
+from book_comparator.scrapers import ALL_SCRAPERS
 from book_comparator.services.search import search_all
 from book_comparator.services.results_server import serve_results
+
+TOTAL_SHOPS = len(ALL_SCRAPERS)
 
 
 class BookComparatorApp:
@@ -105,19 +108,21 @@ class BookComparatorApp:
         self.search_btn.configure(state=tk.DISABLED)
         self.query_entry.configure(state=tk.DISABLED)
         self.view_btn.configure(state=tk.DISABLED)
-        self.status_var.set("Searching 5 bookshops...")
+        self.status_var.set(f"Searching {TOTAL_SHOPS} bookshops...")
 
         def do_search() -> None:
             """Run search in background thread."""
             try:
-                results, session = search_all(query, search_type)
-                self.root.after(0, lambda: self._on_search_complete(results, session))
+                results, session, failed = search_all(query, search_type)
+                self.root.after(0, lambda: self._on_search_complete(results, session, failed))
             except Exception as e:
                 self.root.after(0, lambda: self._on_search_error(str(e)))
 
         threading.Thread(target=do_search, daemon=True).start()
 
-    def _on_search_complete(self, results: list, session: SearchSession) -> None:
+    def _on_search_complete(
+        self, results: list, session: SearchSession, failed: int
+    ) -> None:
         """Handle search completion on the main thread."""
         self._results = results
         self._session = session
@@ -125,12 +130,27 @@ class BookComparatorApp:
         self.search_btn.configure(state=tk.NORMAL)
         self.query_entry.configure(state=tk.NORMAL)
 
+        if failed >= TOTAL_SHOPS:
+            messagebox.showerror(
+                "Connection Error",
+                "All bookshops are unreachable. Check your internet connection.",
+            )
+            self.status_var.set("Error: all bookshops unreachable")
+            self.view_btn.configure(state=tk.DISABLED)
+            return
+
         if results:
             shops = len({r.shop_name for r in results})
-            self.status_var.set(f"Found {len(results)} results across {shops} shops")
+            msg = f"Found {len(results)} results across {shops} shops"
+            if failed > 0:
+                msg += f" ({failed} shops unreachable)"
+            self.status_var.set(msg)
             self.view_btn.configure(state=tk.NORMAL)
         else:
-            self.status_var.set("No results found")
+            msg = "No results found"
+            if failed > 0:
+                msg += f" ({failed} shops unreachable)"
+            self.status_var.set(msg)
             self.view_btn.configure(state=tk.DISABLED)
 
     def _on_search_error(self, message: str) -> None:
