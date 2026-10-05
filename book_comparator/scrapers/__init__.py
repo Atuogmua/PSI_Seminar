@@ -1,5 +1,6 @@
 """Bookstore scrapers package."""
 
+from .base import BaseBookScraper
 from .biblion import BiblionScraper
 from .bookzone import BookzoneScraper
 from .carteamea import CarteameaScraper
@@ -15,6 +16,7 @@ ALL_SCRAPERS = [
 ]
 
 __all__ = [
+    "BaseBookScraper",
     "LibrariusScraper",
     "CarturestiScraper",
     "BiblionScraper",

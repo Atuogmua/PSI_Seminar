@@ -130,7 +130,7 @@ class BookComparatorApp:
                 i,
                 book.title,
                 book.author or "—",
-                f"{book.price} {book.currency}",
+                f"{book.price:.2f} {book.currency}",
                 book.shop_name,
                 book.source_url,
             ))

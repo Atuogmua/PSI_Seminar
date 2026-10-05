@@ -1,14 +1,17 @@
 """Search orchestrator — runs all scrapers concurrently."""
 
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from book_comparator.models.book import BookResult
 from book_comparator.scrapers import ALL_SCRAPERS
-from book_comparator.scrapers.base import BaseScraper
+from book_comparator.scrapers.base import BaseBookScraper
+
+logger = logging.getLogger(__name__)
 
 
 def _run_scraper_search(
-    scraper: BaseScraper,
+    scraper: BaseBookScraper,
     method: str,
     query: str,
 ) -> list[BookResult]:
@@ -17,7 +20,7 @@ def _run_scraper_search(
         func = getattr(scraper, method)
         return func(query)
     except Exception as e:
-        print(f"[{scraper.SHOP_NAME}] Error during {method}: {e}")
+        logger.error("[%s] Error during %s: %s", scraper.SHOP_NAME, method, e)
         return []
 
 
@@ -58,7 +61,7 @@ def search_all(
                 results = future.result()
                 all_results.extend(results)
             except Exception as e:
-                print(f"[{scraper.SHOP_NAME}] Unexpected error: {e}")
+                logger.error("[%s] Unexpected error: %s", scraper.SHOP_NAME, e)
 
     all_results.sort(key=lambda r: r.price)
     return all_results

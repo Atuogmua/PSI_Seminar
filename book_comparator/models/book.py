@@ -1,17 +1,16 @@
 """Data models for book search results."""
 
 from dataclasses import dataclass
-from decimal import Decimal
 
 
 @dataclass
 class BookResult:
     """Represents a single book result from a bookstore scraper."""
 
-    isbn: str
+    isbn: str | None
     title: str
-    author: str
-    price: Decimal
+    author: str | None
+    price: float
     currency: str
     source_url: str
     shop_name: str
