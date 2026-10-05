@@ -1,6 +1,7 @@
 """Search orchestrator — runs all scrapers concurrently and persists results."""
 
 import logging
+import re
 import traceback
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 
@@ -11,7 +12,7 @@ from book_comparator.services.database import Database
 
 logger = logging.getLogger(__name__)
 
-SCRAPER_TIMEOUT = 30
+SCRAPER_TIMEOUT = 60
 
 
 def _run_scraper_search(
@@ -26,14 +27,14 @@ def _run_scraper_search(
 
 def search_all(
     query: str,
-    search_type: str = "title",
-    max_workers: int = 5,
+    search_type: str = "title_author",
+    max_workers: int = 9,
 ) -> tuple[list[BookResult], SearchSession, int]:
     """Run all scrapers concurrently, persist results to SQLite, and return them.
 
     Args:
-        query: The search term (ISBN, title, or author name).
-        search_type: One of 'isbn', 'title', or 'author'.
+        query: The search term (ISBN, or title/author name).
+        search_type: One of 'isbn' or 'title_author'.
         max_workers: Maximum number of concurrent threads.
 
     Returns:
@@ -42,10 +43,9 @@ def search_all(
     """
     method_map = {
         "isbn": "search_by_isbn",
-        "title": "search_by_title",
-        "author": "search_by_author",
+        "title_author": "search_by_title_or_author",
     }
-    method = method_map.get(search_type, "search_by_title")
+    method = method_map.get(search_type, "search_by_title_or_author")
 
     scrapers = [cls() for cls in ALL_SCRAPERS]
     all_results: list[BookResult] = []
@@ -78,6 +78,13 @@ def search_all(
                 future.cancel()
 
     executor.shutdown(wait=False, cancel_futures=True)
+
+    if search_type == "isbn":
+        normalized_query = re.sub(r"[^0-9X]", "", query.strip().upper())
+        all_results = [
+            r for r in all_results
+            if r.isbn and re.sub(r"[^0-9X]", "", r.isbn.strip().upper()) == normalized_query
+        ]
 
     db = Database()
     try:

@@ -1,5 +1,6 @@
-"""Scraper for biblion.md bookstore."""
+"""Scraper for biblion.md bookstore (WooCommerce / Savoy theme)."""
 
+import re
 import logging
 
 from book_comparator.models.book import BookResult
@@ -11,115 +12,141 @@ logger = logging.getLogger(__name__)
 class BiblionScraper(BaseBookScraper):
     """Scraper implementation for biblion.md.
 
-    Follows product links when ISBN is not displayed in the listing.
+    WooCommerce site with Savoy theme. Searches via /?s={query}&post_type=product.
+    Products are listed in li.product containers with a.woocommerce-LoopProduct-link.
+    Follows product links to detail pages and extracts data from
+    h1.product_title, p.price bdi, table.woocommerce-product-attributes,
+    and div.product_meta.
     """
 
     SHOP_NAME = "Biblion"
     BASE_URL = "https://biblion.md"
-    SEARCH_URL = "https://biblion.md/index.php"
+    SEARCH_URL = "https://biblion.md/"
 
-    def _fetch_isbn_from_detail(self, url: str) -> str | None:
-        """Follow a product detail page link and attempt to extract ISBN."""
-        import re
+    def _extract_product_links(self, soup) -> list[str]:
+        links: list[str] = []
+        for a_tag in soup.select("li.product a.woocommerce-LoopProduct-link"):
+            href = a_tag.get("href", "")
+            if href and href not in links:
+                links.append(href)
+        if not links:
+            for a_tag in soup.select("li.product a[href*='/product/']"):
+                href = a_tag.get("href", "")
+                if href and href not in links:
+                    links.append(href)
+        return links
+
+    def _parse_detail_page(self, url: str) -> BookResult | None:
         soup = self._get(url)
         if soup is None:
             return None
+
+        title: str | None = None
+        author: str | None = None
+        price: float | None = None
+        isbn: str | None = None
+
         try:
-            isbn_el = soup.select_one(".isbn, [itemprop='isbn'], td:contains('ISBN') + td, .product-isbn")
-            if isbn_el:
-                return self.normalize_isbn(isbn_el.get_text())
-            text = soup.get_text()
-            match = re.search(r"ISBN[:\s]*([\d\-]{10,17})", text)
-            if match:
-                return self.normalize_isbn(match.group(1))
+            el = soup.select_one("h1.product_title.entry-title")
+            if el:
+                title = el.get_text(strip=True)
         except Exception:
             pass
-        return None
+
+        try:
+            bdi = soup.select_one("p.price span.woocommerce-Price-amount.amount bdi")
+            if bdi:
+                price = self.normalize_price(bdi.get_text())
+        except Exception:
+            pass
+
+        try:
+            tbl = soup.select_one("table.woocommerce-product-attributes")
+            if tbl:
+                for row in tbl.select("tr"):
+                    th = row.select_one("th")
+                    td = row.select_one("td.woocommerce-product-attributes-item__value")
+                    if not td:
+                        td = row.select_one("td:last-child")
+                    if not th or not td:
+                        continue
+                    label = th.get_text(strip=True).lower()
+                    value = td.get_text(strip=True)
+                    if "isbn" in label or "barcode" in label:
+                        isbn = self.normalize_isbn(value)
+                    elif "autor" in label or "author" in label or "автор" in label:
+                        author = value
+        except Exception:
+            pass
+
+        if not author:
+            try:
+                desc = soup.select_one("div#tab-description")
+                if desc:
+                    m = re.search(r"autor\s*[–—\-:]\s*(.+?)(?:,|\.|editura|\n|$)",
+                                  desc.get_text(), re.IGNORECASE)
+                    if m:
+                        author = m.group(1).strip()
+            except Exception:
+                pass
+
+        if not isbn or not author:
+            try:
+                meta = soup.select_one("div.product_meta")
+                if meta:
+                    text = meta.get_text()
+                    if not isbn:
+                        m = re.search(r"ISBN[:\s]*([\d\-]{10,17})", text)
+                        if m:
+                            isbn = self.normalize_isbn(m.group(1))
+            except Exception:
+                pass
+
+        if not isbn:
+            try:
+                text = soup.get_text()
+                m = re.search(r"ISBN[:\s]*([\d\-]{10,17})", text)
+                if m:
+                    isbn = self.normalize_isbn(m.group(1))
+            except Exception:
+                pass
+
+        if not title:
+            return None
+
+        return BookResult(
+            id=None,
+            isbn=isbn,
+            title=title,
+            author=author,
+            price=price,
+            currency="MDL",
+            source_url=url,
+            shop_name=self.SHOP_NAME,
+            session_id=0,
+            scraped_at=self._now_iso(),
+        )
 
     def _parse_results(self, query: str) -> list[BookResult]:
-        """Fetch search results and parse the results list."""
         results: list[BookResult] = []
-        soup = self._get(self.SEARCH_URL, params={"route": "product/search", "search": query})
+        soup = self._get(self.SEARCH_URL, params={"s": query, "post_type": "product"})
         if soup is None:
             return results
 
-        products = soup.select("div.product-item, div.product-card, li.product, div.product-layout, div.product-thumb")
-
-        for product in products:
-            title: str | None = None
-            author: str | None = None
-            price: float | None = None
-            isbn: str | None = None
-            source_url: str = ""
-
-            try:
-                title_el = product.select_one("h4 a, h3 a, .product-title a, .name a, .caption a")
-                title = title_el.get_text(strip=True) if title_el else None
-            except Exception:
-                pass
-
-            try:
-                author_el = product.select_one(".author, .product-author, .description")
-                author = author_el.get_text(strip=True) if author_el else None
-            except Exception:
-                pass
-
-            try:
-                price_el = product.select_one(".price-new, .special-price, .price, .product-price")
-                if price_el:
-                    price = self.normalize_price(price_el.get_text())
-            except Exception:
-                pass
-
-            try:
-                link_el = product.select_one("h4 a, h3 a, .product-title a, .name a, .caption a, a[href]")
-                if link_el:
-                    href = link_el.get("href", "")
-                    source_url = href if href.startswith("http") else f"{self.BASE_URL}{href}"
-            except Exception:
-                pass
-
-            try:
-                isbn_el = product.select_one(".isbn, [data-isbn]")
-                if isbn_el:
-                    isbn = self.normalize_isbn(isbn_el.get("data-isbn") or isbn_el.get_text())
-            except Exception:
-                pass
-
-            if not title or price is None:
-                continue
-
-            if isbn is None and source_url:
-                isbn = self._fetch_isbn_from_detail(source_url)
-
-            results.append(BookResult(
-                id=None,
-                isbn=isbn,
-                title=title,
-                author=author,
-                price=price,
-                currency="MDL",
-                source_url=source_url,
-                shop_name=self.SHOP_NAME,
-                session_id=0,
-                scraped_at=self._now_iso(),
-            ))
+        for link in self._extract_product_links(soup):
+            result = self._parse_detail_page(link)
+            if result:
+                results.append(result)
 
         logger.info("[%s] Found %d results", self.SHOP_NAME, len(results))
         return results
 
     def search_by_isbn(self, isbn: str) -> list[BookResult]:
-        """Search Biblion by ISBN."""
         results = self._parse_results(isbn)
         for r in results:
             if r.isbn is None:
                 r.isbn = self.normalize_isbn(isbn)
         return results
 
-    def search_by_title(self, title: str) -> list[BookResult]:
-        """Search Biblion by book title."""
-        return self._parse_results(title)
-
-    def search_by_author(self, author: str) -> list[BookResult]:
-        """Search Biblion by author name."""
-        return self._parse_results(author)
+    def search_by_title_or_author(self, query: str) -> list[BookResult]:
+        return self._parse_results(query)

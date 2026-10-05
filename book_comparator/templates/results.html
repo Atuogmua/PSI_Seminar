@@ -15,8 +15,9 @@
         }
 
         .container {
-            max-width: 1100px;
+            max-width: 1800px;
             margin: 0 auto;
+            overflow-x: auto;
         }
 
         h1 {
@@ -54,6 +55,10 @@
             letter-spacing: 0.4px;
         }
 
+        th.shop-col {
+            text-align: center;
+        }
+
         td {
             padding: 10px 14px;
             border-bottom: 1px solid #e9ecef;
@@ -72,17 +77,27 @@
             background: #e2e6ea;
         }
 
-        tr.cheapest td {
-            background: #d4edda;
-            font-weight: 600;
-        }
-
-        .price {
+        .price-cell {
+            text-align: center;
             white-space: nowrap;
         }
 
-        .shop {
-            font-weight: 600;
+        .price-cell a {
+            color: #0d6efd;
+            text-decoration: none;
+        }
+
+        .price-cell a:hover {
+            text-decoration: underline;
+        }
+
+        .best-price {
+            background: #d4edda !important;
+            font-weight: 700;
+        }
+
+        .no-price {
+            color: #adb5bd;
         }
 
         a {
@@ -113,32 +128,39 @@
     <div class="container">
         <h1>Price Comparison: {{ query }}</h1>
         <p class="subtitle">
-            Search type: {{ search_type }} | Found {{ result_count }} results | {{ timestamp }}
+            Search type: {{ search_type }} | {{ book_count }} book{{ 's' if book_count != 1 }} from {{ result_count }} listing{{ 's' if result_count != 1 }} | {{ timestamp }}
         </p>
 
-        {% if results %}
+        {% if grouped %}
         <table>
             <thead>
                 <tr>
                     <th>#</th>
-                    <th>Shop</th>
                     <th>Title</th>
                     <th>Author</th>
                     <th>ISBN</th>
-                    <th>Price</th>
-                    <th>Link</th>
+                    {% for shop in shop_names %}
+                    <th class="shop-col">{{ shop }}</th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody>
-                {% for book in results %}
-                <tr{% if loop.first and book.price is not none %} class="cheapest"{% endif %}>
+                {% for book in grouped %}
+                <tr>
                     <td>{{ loop.index }}</td>
-                    <td class="shop">{{ book.shop_name }}</td>
                     <td>{{ book.title }}</td>
                     <td>{{ book.author or '—' }}</td>
                     <td>{{ book.isbn or '—' }}</td>
-                    <td class="price">{{ book.price_display() }}</td>
-                    <td><a href="{{ book.source_url }}" target="_blank" rel="noopener">View</a></td>
+                    {% for shop in shop_names %}
+                    {% if shop in book.shops %}
+                        {% set entry = book.shops[shop] %}
+                        <td class="price-cell{% if entry.price == book.best_price and entry.price is not none %} best-price{% endif %}">
+                            <a href="{{ entry.url }}" target="_blank" rel="noopener">{{ entry.display }}</a>
+                        </td>
+                    {% else %}
+                        <td class="price-cell no-price">—</td>
+                    {% endif %}
+                    {% endfor %}
                 </tr>
                 {% endfor %}
             </tbody>

@@ -34,7 +34,7 @@ def _mock_scraper(shop_name: str, results: list[BookResult] | None = None, raise
     """
     class MockScraper:
         SHOP_NAME = shop_name
-        def search_by_title(self, query):
+        def search_by_title_or_author(self, query):
             if block_event is not None:
                 block_event.wait()
             if raises:
@@ -59,7 +59,7 @@ class TestSearchAllSuccess:
             _mock_scraper("Bookzone"),
         ])
 
-        results, session, failed = search_all("test", "title")
+        results, session, failed = search_all("test", "title_author")
         assert len(results) == 5
         assert failed == 0
         assert session.query == "test"
@@ -82,7 +82,7 @@ class TestSearchPartialFailure:
             _mock_scraper("Bookzone"),
         ])
 
-        results, session, failed = search_all("test", "title")
+        results, session, failed = search_all("test", "title_author")
         assert len(results) == 3
         assert failed == 2
 
@@ -103,7 +103,7 @@ class TestSearchAllFail:
             _mock_scraper("Bookzone", raises=True),
         ])
 
-        results, session, failed = search_all("test", "title")
+        results, session, failed = search_all("test", "title_author")
         assert results == []
         assert failed == 5
 
@@ -129,7 +129,7 @@ class TestSearchTimeout:
         ])
 
         start = time.time()
-        results, session, failed = search_all("test", "title")
+        results, session, failed = search_all("test", "title_author")
         elapsed = time.time() - start
 
         block.set()  # unblock the stuck thread so it can exit

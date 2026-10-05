@@ -8,7 +8,7 @@ _CREATE_SESSIONS = """
 CREATE TABLE IF NOT EXISTS search_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     query TEXT NOT NULL,
-    search_type TEXT NOT NULL CHECK(search_type IN ('isbn','title','author')),
+    search_type TEXT NOT NULL CHECK(search_type IN ('isbn','title','author','title_author')),
     timestamp TEXT NOT NULL
 );
 """
@@ -38,9 +38,33 @@ class Database:
         self.conn = sqlite3.connect(db_path)
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.execute("PRAGMA foreign_keys=ON;")
-        self.conn.execute(_CREATE_SESSIONS)
-        self.conn.execute(_CREATE_RESULTS)
+        self._migrate_schema()
         self.conn.commit()
+
+    def _migrate_schema(self) -> None:
+        """Create tables or migrate from older schemas."""
+        existing = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='search_sessions'"
+        ).fetchone()
+
+        if existing:
+            sql = self.conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='search_sessions'"
+            ).fetchone()[0]
+            if "'title_author'" not in sql:
+                self.conn.execute("PRAGMA foreign_keys=OFF;")
+                self.conn.execute("ALTER TABLE search_sessions RENAME TO _sessions_old")
+                self.conn.execute(_CREATE_SESSIONS)
+                self.conn.execute(
+                    "INSERT INTO search_sessions (id, query, search_type, timestamp) "
+                    "SELECT id, query, search_type, timestamp FROM _sessions_old"
+                )
+                self.conn.execute("DROP TABLE _sessions_old")
+                self.conn.execute("PRAGMA foreign_keys=ON;")
+        else:
+            self.conn.execute(_CREATE_SESSIONS)
+
+        self.conn.execute(_CREATE_RESULTS)
 
     def save_session(self, session: SearchSession) -> int:
         """Insert a session row, return its id."""

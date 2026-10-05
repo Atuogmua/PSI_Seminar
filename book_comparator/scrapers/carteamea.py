@@ -1,5 +1,6 @@
-"""Scraper for carteamea.md bookstore."""
+"""Scraper for carteamea.md bookstore (WooCommerce / Shoptimizer theme)."""
 
+import re
 import logging
 
 from book_comparator.models.book import BookResult
@@ -13,111 +14,147 @@ MAX_PAGES = 3
 class CarteameaScraper(BaseBookScraper):
     """Scraper implementation for carteamea.md.
 
-    Handles pagination — scrapes the first 3 pages of results maximum.
+    WooCommerce site with Shoptimizer theme. Searches via /?s={query}&post_type=product.
+    Handles pagination (first 3 pages via &paged=N).
+    Products are in li.product with a.woocommerce-LoopProduct-link linking to /shop/slug/.
+    Follows product links and extracts data from h1.product_title,
+    p.price bdi (comma decimal separator), woocommerce-product-attributes table,
+    product_meta, and short-description.
     """
 
     SHOP_NAME = "CarteaMea"
     BASE_URL = "https://carteamea.md"
-    SEARCH_URL = "https://carteamea.md/search"
+    SEARCH_URL = "https://carteamea.md/"
 
-    def _parse_page(self, soup) -> list[BookResult]:
-        """Parse a single page of search results into BookResult objects."""
-        results: list[BookResult] = []
-        products = soup.select("div.product-item, div.product-card, li.product, div.product-thumb, div.product")
+    def _extract_product_links(self, soup) -> list[str]:
+        links: list[str] = []
+        for a_tag in soup.select("li.product a.woocommerce-LoopProduct-link"):
+            href = a_tag.get("href", "")
+            if href and href not in links:
+                links.append(href)
+        return links
 
-        for product in products:
-            title: str | None = None
-            author: str | None = None
-            price: float | None = None
-            isbn: str | None = None
-            source_url: str = ""
+    def _parse_detail_page(self, url: str) -> BookResult | None:
+        soup = self._get(url)
+        if soup is None:
+            return None
 
+        title: str | None = None
+        author: str | None = None
+        price: float | None = None
+        isbn: str | None = None
+
+        try:
+            el = soup.select_one("h1.product_title.entry-title")
+            if el:
+                title = el.get_text(strip=True)
+        except Exception:
+            pass
+
+        try:
+            bdi = soup.select_one("div.summary.entry-summary p.price span.woocommerce-Price-amount bdi")
+            if not bdi:
+                bdi = soup.select_one("p.price span.woocommerce-Price-amount bdi")
+            if bdi:
+                price = self.normalize_price(bdi.get_text())
+        except Exception:
+            pass
+
+        try:
+            tbl = soup.select_one("table.woocommerce-product-attributes")
+            if tbl:
+                for row in tbl.select("tr"):
+                    th = row.select_one("th")
+                    td = row.select_one("td.woocommerce-product-attributes-item__value")
+                    if not td:
+                        td = row.select_one("td:last-child")
+                    if not th or not td:
+                        continue
+                    label = th.get_text(strip=True).lower()
+                    value = td.get_text(strip=True)
+                    if "isbn" in label:
+                        isbn = self.normalize_isbn(value)
+                    elif "autor" in label or "author" in label:
+                        author = value
+        except Exception:
+            pass
+
+        if not isbn or not author:
             try:
-                title_el = product.select_one("h4 a, h3 a, .product-title a, .name a, .caption a, .title a")
-                title = title_el.get_text(strip=True) if title_el else None
+                meta = soup.select_one("div.product_meta")
+                if meta:
+                    text = meta.get_text()
+                    if not isbn:
+                        m = re.search(r"ISBN[:\s]*([\d\-]{10,17})", text)
+                        if m:
+                            isbn = self.normalize_isbn(m.group(1))
             except Exception:
                 pass
 
+        if not author:
             try:
-                author_el = product.select_one(".author, .product-author, .description, .subtitle")
-                author = author_el.get_text(strip=True) if author_el else None
+                desc = soup.select_one("div.woocommerce-product-details__short-description")
+                if desc:
+                    text = desc.get_text()
+                    m = re.search(r"Autor[:\s]*(.+)", text)
+                    if m:
+                        author = m.group(1).strip()
             except Exception:
                 pass
 
-            try:
-                price_el = product.select_one(".price-new, .special-price, .price, .product-price")
-                if price_el:
-                    price = self.normalize_price(price_el.get_text())
-            except Exception:
-                pass
+        if not title:
+            return None
 
-            try:
-                link_el = product.select_one("h4 a, h3 a, .product-title a, .name a, a[href]")
-                if link_el:
-                    href = link_el.get("href", "")
-                    source_url = href if href.startswith("http") else f"{self.BASE_URL}{href}"
-            except Exception:
-                pass
-
-            try:
-                isbn_el = product.select_one(".isbn, [data-isbn]")
-                if isbn_el:
-                    isbn = self.normalize_isbn(isbn_el.get("data-isbn") or isbn_el.get_text())
-            except Exception:
-                pass
-
-            if not title or price is None:
-                continue
-
-            results.append(BookResult(
-                id=None,
-                isbn=isbn,
-                title=title,
-                author=author,
-                price=price,
-                currency="MDL",
-                source_url=source_url,
-                shop_name=self.SHOP_NAME,
-                session_id=0,
-                scraped_at=self._now_iso(),
-            ))
-
-        return results
+        return BookResult(
+            id=None,
+            isbn=isbn,
+            title=title,
+            author=author,
+            price=price,
+            currency="MDL",
+            source_url=url,
+            shop_name=self.SHOP_NAME,
+            session_id=0,
+            scraped_at=self._now_iso(),
+        )
 
     def _parse_results(self, query: str) -> list[BookResult]:
-        """Fetch up to MAX_PAGES pages of search results."""
-        all_results: list[BookResult] = []
+        results: list[BookResult] = []
+        seen_links: set[str] = set()
 
         for page in range(1, MAX_PAGES + 1):
-            soup = self._get(self.SEARCH_URL, params={"q": query, "page": str(page)})
+            params: dict[str, str] = {"s": query, "post_type": "product"}
+            if page > 1:
+                params["paged"] = str(page)
+
+            soup = self._get(self.SEARCH_URL, params=params)
             if soup is None:
                 break
 
-            page_results = self._parse_page(soup)
-            if not page_results:
+            links = self._extract_product_links(soup)
+            new_links = [lnk for lnk in links if lnk not in seen_links]
+            if not new_links:
                 break
 
-            all_results.extend(page_results)
+            for link in new_links:
+                seen_links.add(link)
+                result = self._parse_detail_page(link)
+                if result:
+                    results.append(result)
 
-            next_link = soup.select_one("a.next, li.next a, .pagination a[rel='next']")
+            next_link = soup.select_one("a.next.page-numbers")
             if not next_link:
                 break
 
-        logger.info("[%s] Found %d results", self.SHOP_NAME, len(all_results))
-        return all_results
+        logger.info("[%s] Found %d results", self.SHOP_NAME, len(results))
+        return results
 
     def search_by_isbn(self, isbn: str) -> list[BookResult]:
-        """Search CarteaMea by ISBN."""
         results = self._parse_results(isbn)
         for r in results:
             if r.isbn is None:
                 r.isbn = self.normalize_isbn(isbn)
         return results
 
-    def search_by_title(self, title: str) -> list[BookResult]:
-        """Search CarteaMea by book title."""
-        return self._parse_results(title)
-
-    def search_by_author(self, author: str) -> list[BookResult]:
-        """Search CarteaMea by author name."""
-        return self._parse_results(author)
+    def search_by_title_or_author(self, query: str) -> list[BookResult]:
+        return self._parse_results(query)

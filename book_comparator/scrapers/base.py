@@ -114,11 +114,6 @@ class BaseBookScraper(ABC):
         ...
 
     @abstractmethod
-    def search_by_title(self, title: str) -> list[BookResult]:
-        """Search for books by title."""
-        ...
-
-    @abstractmethod
-    def search_by_author(self, author: str) -> list[BookResult]:
-        """Search for books by author name."""
+    def search_by_title_or_author(self, query: str) -> list[BookResult]:
+        """Search for books by title or author name."""
         ...
