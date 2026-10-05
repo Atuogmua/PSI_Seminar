@@ -125,11 +125,3 @@ pytest tests/ -v --cov=book_comparator --cov-report=term-missing
 | Cartier | https://cartier.md | Publisher and bookshop (WooCommerce) |
 | Cartego | https://cartego.md | WooCommerce bookshop with REST API |
 | Dorinta | https://dorinta.md | Custom platform bookshop |
-
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
-## Author
-
-Your Name — your.email@example.com
