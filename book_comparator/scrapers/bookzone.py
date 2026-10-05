@@ -74,6 +74,7 @@ class BookzoneScraper(BaseBookScraper):
                 continue
 
             results.append(BookResult(
+                id=None,
                 isbn=isbn,
                 title=title,
                 author=author,
@@ -81,6 +82,8 @@ class BookzoneScraper(BaseBookScraper):
                 currency="MDL",
                 source_url=source_url,
                 shop_name=self.SHOP_NAME,
+                session_id=0,
+                scraped_at=self._now_iso(),
             ))
 
         return results

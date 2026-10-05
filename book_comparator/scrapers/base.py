@@ -4,6 +4,7 @@ import logging
 import re
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -80,6 +81,11 @@ class BaseBookScraper(ABC):
             return float(text)
         except ValueError:
             return None
+
+    @staticmethod
+    def _now_iso() -> str:
+        """Return the current UTC timestamp in ISO 8601 format."""
+        return datetime.now(timezone.utc).isoformat()
 
     @abstractmethod
     def search_by_isbn(self, isbn: str) -> list[BookResult]:

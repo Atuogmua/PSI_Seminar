@@ -135,7 +135,7 @@
                     <td>{{ loop.index }}</td>
                     <td>{{ book.title }}</td>
                     <td>{{ book.author or '—' }}</td>
-                    <td class="price">{{ book.price }} {{ book.currency }}</td>
+                    <td class="price">{{ book.price_display() }}</td>
                     <td class="shop-name">{{ book.shop_name }}</td>
                     <td><a href="{{ book.source_url }}" target="_blank" rel="noopener">Vezi oferta</a></td>
                 </tr>

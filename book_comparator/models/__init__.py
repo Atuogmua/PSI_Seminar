@@ -1,5 +1,5 @@
 """Book data models."""
 
-from .book import BookResult
+from .book import BookResult, SearchSession
 
-__all__ = ["BookResult"]
+__all__ = ["BookResult", "SearchSession"]

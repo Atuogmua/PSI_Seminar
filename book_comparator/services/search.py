@@ -1,11 +1,12 @@
-"""Search orchestrator — runs all scrapers concurrently."""
+"""Search orchestrator — runs all scrapers concurrently and persists results."""
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from book_comparator.models.book import BookResult
+from book_comparator.models.book import BookResult, SearchSession
 from book_comparator.scrapers import ALL_SCRAPERS
 from book_comparator.scrapers.base import BaseBookScraper
+from book_comparator.services.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ def search_all(
     search_type: str = "title",
     max_workers: int = 5,
 ) -> list[BookResult]:
-    """Run all scrapers concurrently and return aggregated results.
+    """Run all scrapers concurrently, persist results to SQLite, and return them.
 
     Args:
         query: The search term (ISBN, title, or author name).
@@ -37,7 +38,7 @@ def search_all(
         max_workers: Maximum number of concurrent threads.
 
     Returns:
-        Combined list of BookResult from all scrapers, sorted by price ascending.
+        Combined list of BookResult from all scrapers, sorted by price ascending (NULLs last).
     """
     method_map = {
         "isbn": "search_by_isbn",
@@ -63,5 +64,18 @@ def search_all(
             except Exception as e:
                 logger.error("[%s] Unexpected error: %s", scraper.SHOP_NAME, e)
 
-    all_results.sort(key=lambda r: r.price)
+    db = Database()
+    try:
+        session = SearchSession.create(query, search_type)
+        session_id = db.save_session(session)
+
+        for r in all_results:
+            r.session_id = session_id
+
+        if all_results:
+            db.save_results(all_results)
+    finally:
+        db.close()
+
+    all_results.sort(key=lambda r: (r.price is None, r.price or 0))
     return all_results
