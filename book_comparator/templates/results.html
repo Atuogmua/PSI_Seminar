@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comparator Prețuri Cărți</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 1.8rem;
+        }
+
+        .search-info {
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 24px;
+            font-size: 0.95rem;
+        }
+
+        .search-info strong {
+            color: #2c3e50;
+        }
+
+        .results-count {
+            text-align: center;
+            margin-bottom: 16px;
+            color: #555;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        thead {
+            background: #2c3e50;
+            color: #fff;
+        }
+
+        th {
+            padding: 14px 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 0.95rem;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        tr:first-child td {
+            background: #e8f5e9;
+            font-weight: 600;
+        }
+
+        .price {
+            font-weight: 700;
+            color: #27ae60;
+            white-space: nowrap;
+        }
+
+        .shop-name {
+            font-weight: 600;
+            color: #2980b9;
+        }
+
+        a {
+            color: #2980b9;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Comparator Prețuri Cărți</h1>
+        <p class="search-info">
+            Căutare după <strong>{{ search_type }}</strong>: <strong>{{ query }}</strong>
+        </p>
+
+        {% if results %}
+        <p class="results-count">{{ results | length }} rezultat(e) găsite</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Titlu</th>
+                    <th>Autor</th>
+                    <th>Preț</th>
+                    <th>Magazin</th>
+                    <th>Link</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for book in results %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ book.title }}</td>
+                    <td>{{ book.author or '—' }}</td>
+                    <td class="price">{{ book.price }} {{ book.currency }}</td>
+                    <td class="shop-name">{{ book.shop_name }}</td>
+                    <td><a href="{{ book.source_url }}" target="_blank" rel="noopener">Vezi oferta</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="no-results">
+            Nu au fost găsite rezultate pentru căutarea dumneavoastră.
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
